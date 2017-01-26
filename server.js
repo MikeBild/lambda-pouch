@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
-const spawn = require('child_process').spawn;
 const _ = require('lodash');
 const cron = require('node-cron');
 const express = require('express');
@@ -9,11 +8,10 @@ const expressCors = require('cors');
 const expressBodyParser = require('body-parser');
 const expressResponseTime = require('response-time');
 const expressJWT = require('express-jwt');
-const pouchdbExpress = require('pouchdb-express-router');
+const pouchDBExpress = require('pouchdb-express-router');
 const parseDataUrl = require('parse-data-url');
-
 const logout = require('./logout')();
-const pouch = require('./lib/pouchdb');
+const pouchdb = require('./lib/pouchdb');
 const functions = require('./lib/functions');
 
 const app = express();
@@ -24,33 +22,11 @@ app.use(expressCors());
 
 app.get('/_status', (req, res, next) => res.status(200).send({memMB: Math.floor((process.memoryUsage().rss / 1048576))}));
 
-app.get('/packages', checkJWT, (req, res, next) => {
-  const package = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json')).toString());
-  res.send(package.optionalDependencies || {});
-});
-
-app.patch('/packages', checkJWT, (req, res, next) => {
-  const package = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json')).toString());
-  package.optionalDependencies = Object.assign(package.optionalDependencies, req.body || {});
-  fs.writeFileSync(path.join(__dirname, 'package.json'), JSON.stringify(package, null, 2));
-  const child = spawn('npm', ['install']);
-  let output = '';
-  child.stdout.on('data', data => output += data);
-  child.stderr.on('data', data => output += data);
-  child.on('exit', exitCode => {
-    res.send({
-      packages: package.optionalDependencies,
-      code: exitCode,
-      message: output,
-    });
-  });
-});
-
 app.all('/*', checkOptionalJWT, (req, res, next) => {
   const match = req.path.split('/').filter(x => x);
   if(match[0] === 'default') return next();
 
-  const defaultPouchDB = pouch.createPouchDB('default');
+  const defaultPouchDB = pouchdb.createPouchDB('default');
   const docid = path.parse(req.params['0']).base || req.params[0] || 'index';
   const docrev = req.query.rev || req.headers.rev;
 
@@ -90,7 +66,7 @@ app.all('/*', checkOptionalJWT, (req, res, next) => {
   if(match[0] === 'default') return next();
   const docid = path.parse(req.params['0']).base || req.params[0] || 'index.html';
 
-  pouch.createPouchDB('default')
+  pouchdb.createPouchDB('default')
     .find({ selector: {docid:docid, doctype:'Static'} })
     .then(data => (!(data && data.docs.length)) ? Promise.reject(next()) : data)
     .then(data => ({
@@ -118,11 +94,11 @@ app.use('/', checkJWT, (req, res, next) => {
   if(match[0] !== 'default') return res.sendStatus(404);
 
   const pouchDBWrapper = function(name, opts) {
-    return pouch.createPouchDB('default');
+    return pouchdb.createPouchDB('default');
   };
 
-  util.inherits(pouchDBWrapper, pouch.PouchDB);
-  pouchdbExpress(pouchDBWrapper)(req, res, next);
+  util.inherits(pouchDBWrapper, pouchdb.PouchDB);
+  pouchDBExpress(pouchDBWrapper)(req, res, next);
 });
 
 app.use((err, req, res, next) => {
@@ -156,13 +132,13 @@ function resolveEnv(name, options) {
   if(!envsCache[name]) {
     envsCache[name] = Object.assign({}, options);
     envsCache[name].name = name;
-    envsCache[name].pouchdb = pouch.createPouchDB(name, options);
+    envsCache[name].pouchdb = pouchdb.createPouchDB(name, options);
     envsCache[name].pouchdb.changes({live: true, since: 'now', include_docs: true})
       .on('change', info => {
         if(cronJobs[info.id]) cronJobs[info.id].destroy();
         if(info.doc.doctype === 'Schedule' && info.doc.schedule) cronJobs[info.id] = cron.schedule(info.doc.schedule,()=>functions.exec({scheduled: true, args: {},context: {environment: 'default', name: info.doc.docid},implementation: info.doc.content}),true);
       });
-    envsCache[name].sync = pouch.sync(envsCache[name].name, envsCache[name].couchURL, envsCache[name].continuous_sync);
+    envsCache[name].sync = pouchdb.sync(envsCache[name].name, envsCache[name].couchURL, envsCache[name].continuous_sync);
   }
   return envsCache[name];
 }

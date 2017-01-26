@@ -1,6 +1,6 @@
 {
   "name": "lambda-pouch",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Script API runtime on top of PouchDB",
   "author": "Mike Bild <mike.bild@gmail.com>",
   "license": "MIT",
