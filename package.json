@@ -20,7 +20,7 @@
   "scripts": {
     "start": "./bin/lambda-pouch",
     "dev": "concurrently --kill-others --raw \"mocha -w -c -b\" \"nodemon ./bin/lambda-pouch\"",
-    "test": "mocha -w -c -b",
+    "test": "mocha -c -b",
     "lint": "eslint --quiet lib bin test || true"
   },
   "keywords": [
