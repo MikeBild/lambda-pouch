@@ -1,9 +1,9 @@
-const schema = require('./lib/pouch-graphql');
-const pouch = require('./lib/pouch-graphql/pouchdb');
+const server = require('./server');
+const pouchdb = require('./lib/pouchdb');
 const functions = require('./lib/functions');
 
 module.exports = {
-  schema: schema,
-  pouch: pouch,
+  server: server,
+  pouchdb: pouchdb,
   functions: functions,
 };
