@@ -1,0 +1,90 @@
+#!/usr/bin/env node
+require('paint-console');
+const path = require('path');
+const fs = require('fs');
+const program = require('commander');
+const jwt = require('jsonwebtoken');
+const manifest = require('../package.json');
+const scriptPouch = require('../server.js');
+
+program
+  .version(manifest.version)
+  .usage('[options]')
+  .option('-r, --remote <url>', 'a CouchDB URL for master-master synchronisation')
+  .option('-p, --port <integer>', 'a URL port the server will listen to. defaults to 3000', parseInt)
+  .option('-a, --secret <string>', 'the secret to be used to encrypt tokens. token authentication disabled if this is not set')
+  .option('-s, --static <file>', 'Migrate static content file', migrateStaticFile)
+  .option('-l, --function <file>', 'Migrate custom JS function file', migrateFunctionFile)
+  .option('-c, --schedule <string>', 'Cron pattern to schedule a JS function')
+  .option('-y, --sign <string>', 'the secret to be used to sign and encrypt tokens.', jwtSignSecret)
+  .parse(process.argv);
+
+if(program.static
+  || program.function
+  || program.schedule
+  || program.sign)
+  return console.log('\nOperation successful');
+
+const app = scriptPouch.init({
+              port: program.port || process.env.SERVICE_PORT || 3000,
+              couchURL: program.remote || process.env.COUCHDB_URL,
+              continuous_sync: true,
+              secret: program.secret || process.env.SECRET
+            })
+            .start();
+
+function migrateFunctionFile(args){
+  const docid = path.parse(args).name;
+  const contentFilePath = path.resolve(args);
+  const content = fs.readFileSync(contentFilePath).toString();
+  const pouchdb = scriptPouch.init({couchURL: program.remote, continuous_sync: false}).default().pouchdb;
+
+  return pouchdb
+    .get(docid)
+    .catch(error => {
+      if(error.message === 'missing') return { _id: docid };
+      throw error;
+    })
+    .then(doc => {
+      doc.content = content;
+      doc.doctype = 'Function';
+      doc.docid = docid;
+      program.schedule ? doc.schedule = program.schedule : delete doc.schedule;
+
+      return pouchdb.put(doc);
+    })
+    .catch(error => console.error(error.message));
+}
+
+function migrateStaticFile(args){
+  const docid = path.parse(args).base;
+  const contentFilePath = path.resolve(args);
+  const content = fs.readFileSync(contentFilePath).toString();
+  const pouchdb = scriptPouch.init({couchURL: program.remote, continuous_sync: false}).default().pouchdb;
+
+  return pouchdb
+    .get(docid)
+    .catch(error => {
+      if(error.message === 'missing') return { _id: docid };
+      throw error;
+    })
+    .then(doc => {
+      doc.content = content;
+      doc.doctype = 'Static';
+      doc.docid = docid;
+
+      return pouchdb.put(doc);
+    })
+    .catch(error => console.error(error.message));
+}
+
+function jwtSignSecret(args){
+  const authToken = jwt.sign({user: 'admin', role: 'admin'}, args, {audience: 'script-pouch'});
+  console.log(`JWT token generated. Use the following authorization method:\n`);
+  console.log(`------------------- as HTTP Header --------------------`);
+  console.log(`Authorization: Bearer ${authToken}`);
+  console.log(`\n--------------- or as Query Parameter ---------------`);
+  console.log(`?token=${authToken}`);
+  console.log(`\nReady to start GraphQL-Server with:`);
+  console.log(`graphql-pouch -a ${args}`);
+}
